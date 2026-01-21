@@ -1,0 +1,10 @@
+flask
+flask-socketio
+flask-login
+pandas
+numpy
+scikit-learn
+torch
+faker
+reportlab
+eventlet

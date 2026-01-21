@@ -1,0 +1,704 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>银行风控监测系统</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script> <!-- 添加 zoom 插件 -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script> <!-- 添加拖拽排序库 -->
+    <style>
+        body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; transition: background 0.5s; }
+        .navbar { background: linear-gradient(90deg, #007bff 0%, #0056b3 100%) !important; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .sidebar { background: #ffffff; border-right: 1px solid #dee2e6; height: calc(100vh - 56px); position: fixed; width: 250px; padding: 20px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #007bff #f1f1f1; } /* 自定义滚动条 */
+        .sidebar::-webkit-scrollbar { width: 8px; }
+        .sidebar::-webkit-scrollbar-thumb { background: #007bff; border-radius: 10px; }
+        .main-content { margin-left: 250px; padding: 20px; }
+        .card { border: none; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); transition: transform 0.3s ease, box-shadow 0.3s ease; overflow: hidden; animation: cardFadeIn 0.5s ease-in-out; }
+        @keyframes cardFadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
+        .card-header { background: linear-gradient(90deg, #17a2b8 0%, #138496 100%); border-top-left-radius: 15px; border-top-right-radius: 15px; font-weight: bold; }
+        .card-body { padding: 1.5rem; }
+        .alert-notification { position: fixed; top: 80px; right: 20px; z-index: 1050; min-width: 300px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); animation: fadeIn 0.5s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        .badge { border-radius: 20px; padding: 0.5em 1em; }
+        .list-group-item { border: none; background: transparent; transition: background 0.3s; }
+        .list-group-item:hover { background: #f8f9fa; }
+        .modal-content { border-radius: 15px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .modal-header { background: #007bff; color: white; }
+        .modal-body { background: #f8f9fa; }
+        canvas { background: white; border-radius: 10px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); min-height: 150px; transition: transform 0.3s; }
+        canvas:hover { transform: scale(1.02); }
+        .btn { border-radius: 20px; transition: background 0.3s, transform 0.3s; }
+        .btn:hover { transform: scale(1.05); }
+        .table { border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .table thead { background: #007bff; color: white; }
+        body.dark-mode { background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); color: #f8f9fa; }
+        .card.dark-mode { background: #1e293b; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .card-header.dark-mode { background: linear-gradient(90deg, #0d6efd 0%, #0a58ca 100%); }
+        .navbar.dark-mode { background: linear-gradient(90deg, #0d6efd 0%, #0a58ca 100%) !important; }
+        .modal-content.dark-mode { background: #1e293b; }
+        .table.dark-mode { background: #2c3e50; color: #f8f9fa; }
+        .sidebar.dark-mode { background: #1e293b; border-right: 1px solid #495057; scrollbar-color: #0d6efd #2c3e50; }
+        .sidebar.dark-mode::-webkit-scrollbar-thumb { background: #0d6efd; }
+        .loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060; }
+        .search-bar { margin-bottom: 20px; } /* 新增搜索栏样式 */
+        .alert-log { max-height: 200px; overflow-y: auto; margin-top: 20px; } /* 新增警报日志样式 */
+        .color-picker { margin-top: 10px; } /* 新增主题颜色选择器样式 */
+        .sortable { cursor: grab; } /* 新增拖拽排序样式 */
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#"><i class="bi bi-bank me-2"></i>银行风控监测仪表盘</a>
+            <button id="themeToggle" class="btn btn-outline-light ms-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="切换暗黑/亮色模式"><i class="bi bi-moon-stars-fill"></i> 切换主题</button>
+            <button class="btn btn-outline-light ms-2" onclick="logout()"><i class="bi bi-box-arrow-right"></i> 登出</button> <!-- 新增登出按钮 -->
+            <button class="btn btn-outline-light ms-2" onclick="refreshData()"><i class="bi bi-arrow-clockwise"></i> 刷新</button> <!-- 新增刷新按钮 -->
+            <div class="color-picker ms-2">
+                <label class="text-white me-2">自定义颜色：</label>
+                <input type="color" id="customColor" value="#007bff">
+                <button class="btn btn-outline-light btn-sm" onclick="applyCustomColor()"><i class="bi bi-palette me-1"></i>应用</button> <!-- 新增自定义颜色按钮 -->
+            </div>
+        </div>
+    </nav>
+    <div class="sidebar">
+        <h5><i class="bi bi-list me-2"></i>场景导航</h5>
+        <ul class="list-group">
+            {% for scenario in scenarios_list %}
+                <li class="list-group-item"><a href="#{{ scenario }}" class="text-decoration-none"><i class="bi bi-shield-lock me-2"></i>{{ stats[scenario].name }}</a></li>
+            {% endfor %}
+        </ul>
+        <hr>
+        <h5><i class="bi bi-gear me-2"></i>系统设置</h5>
+        <ul class="list-group">
+            <li class="list-group-item"><a href="/profile" class="text-decoration-none"><i class="bi bi-person-circle me-2"></i>个人资料</a></li> <!-- 新增个人资料链接 -->
+            <li class="list-group-item"><a href="/logs" class="text-decoration-none"><i class="bi bi-journal-text me-2"></i>系统日志</a></li> <!-- 新增日志链接 -->
+            <li class="list-group-item"><a href="/export/all" class="text-decoration-none"><i class="bi bi-download me-2"></i>导出所有数据</a></li> <!-- 新增导出所有按钮 -->
+            <li class="list-group-item">
+                <label><i class="bi bi-eye me-2"></i>显示偏好</label>
+                <select class="form-select mt-1" id="userPreference">
+                    <option value="compact">紧凑视图</option>
+                    <option value="detailed">详细视图</option>
+                    <option value="graphical">图形化视图</option>
+                </select>
+                <button class="btn btn-sm btn-primary mt-2" onclick="applyPreference()"><i class="bi bi-save me-1"></i>保存</button> <!-- 新增用户偏好设置 -->
+            </li>
+        </ul>
+        <div class="alert-log">
+            <h6><i class="bi bi-bell me-2"></i>警报历史</h6>
+            <ul id="alertHistory" class="list-group"></ul> <!-- 新增警报历史列表 -->
+        </div>
+    </div>
+    <div class="main-content container mt-5">
+        <div class="search-bar row">
+            <div class="col-md-6">
+                <input type="text" id="searchInput" class="form-control" placeholder="搜索场景...">
+            </div>
+            <div class="col-md-6">
+                <button class="btn btn-primary" onclick="searchScenarios()"><i class="bi bi-search me-2"></i>搜索</button>
+            </div>
+        </div>
+        <div class="row sortable" id="scenariosRow"> <!-- 添加sortable类以启用拖拽排序 -->
+            {% for scenario in scenarios_list %}
+                <div class="col-md-4 mb-4 scenario-card" id="{{ scenario }}">
+                    <div class="card" data-bs-toggle="modal" data-bs-target="#modal-{{ scenario }}" style="cursor: pointer;">
+                        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-shield-lock me-2"></i>{{ stats[scenario].name }}</span>
+                            {% if stats[scenario].alerts|selectattr('value')|list|length > 0 %}
+                                <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>警报 ({{ stats[scenario].alerts|selectattr('value')|list|length }} 模型)</span>
+                            {% endif %}
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text"><i class="bi bi-list-check me-2"></i>总事件：{{ stats[scenario].total_transactions }}</p>
+                            <p class="card-text"><i class="bi bi-exclamation-circle me-2 text-danger"></i>高风险：{{ stats[scenario].risk_count }}</p>
+                            <p class="card-text small"><i class="bi bi-gear me-2"></i>控制手段：{{ stats[scenario].controls }}</p>
+                            <h6 class="mt-3"><i class="bi bi-bar-chart me-2"></i>模型准确率：</h6>
+                            <ul class="list-group list-group-flush">
+                                {% for model in models_list %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        {{ model | replace('_', ' ') | title }}
+                                        <span class="badge bg-primary">{{ stats[scenario].accuracies[model] | round(4) }}</span>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                            <canvas id="chart-{{ scenario }}" height="150"></canvas>
+                            <a href="/report/{{ scenario }}" class="btn btn-sm btn-outline-primary mt-2"><i class="bi bi-file-earmark-text me-1"></i>生成报告</a>
+                            <a href="/export/{{ scenario }}" class="btn btn-sm btn-outline-secondary mt-2"><i class="bi bi-download me-1"></i>导出数据</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 模态框：详细视图，优化图表和交互 -->
+                <div class="modal fade" id="modal-{{ scenario }}" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog modal-xl">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title"><i class="bi bi-zoom-in me-2"></i>{{ stats[scenario].name }} 详细监测</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6><i class="bi bi-bar-chart-fill me-2"></i>风险分布 (柱状图)</h6>
+                                        <canvas id="distChart-{{ scenario }}" height="200"></canvas>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6><i class="bi bi-radar me-2"></i>模型比较 (雷达图)</h6>
+                                        <canvas id="compareChart-{{ scenario }}" height="200"></canvas>
+                                    </div>
+                                </div>
+                                <div class="row mt-4">
+                                    <div class="col-md-6">
+                                        <h6><i class="bi bi-grid-3x3-gap-fill me-2"></i>风险热力图</h6>
+                                        <canvas id="heatmapChart-{{ scenario }}" height="200"></canvas>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6><i class="bi bi-graph-up-arrow me-2"></i>LSTM未来预测 (线图)</h6>
+                                        <canvas id="futureChart-{{ scenario }}" height="200"></canvas>
+                                    </div>
+                                </div>
+                                <div class="row mt-4">
+                                    <div class="col-md-6">
+                                        <h6><i class="bi bi-scatter-plot me-2"></i>风险散点图</h6>
+                                        <canvas id="scatterChart-{{ scenario }}" height="200"></canvas>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6><i class="bi bi-pie-chart-fill me-2"></i>风险比例饼图</h6>
+                                        <canvas id="pieChart-{{ scenario }}" height="200"></canvas>
+                                    </div>
+                                </div>
+                                <div class="row mt-4"> <!-- 新增泡泡图和极坐标图 -->
+                                    <div class="col-md-6">
+                                        <h6><i class="bi bi-circle me-2"></i>风险泡泡图</h6>
+                                        <canvas id="bubbleChart-{{ scenario }}" height="200"></canvas>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6><i class="bi bi-compass me-2"></i>风险极坐标图</h6>
+                                        <canvas id="polarChart-{{ scenario }}" height="200"></canvas>
+                                    </div>
+                                </div>
+                                <div class="row mt-4"> <!-- 新增实时数据流图 -->
+                                    <div class="col-md-12">
+                                        <h6><i class="bi bi-activity me-2"></i>实时风险流图</h6>
+                                        <canvas id="streamChart-{{ scenario }}" height="200"></canvas>
+                                    </div>
+                                </div>
+                                <div class="row mt-4"> <!-- 新增模型性能表格 -->
+                                    <div class="col-md-12">
+                                        <h6><i class="bi bi-table me-2"></i>模型性能比较</h6>
+                                        <table class="table table-striped">
+                                            <thead><tr><th>模型</th><th>准确率</th><th>警报状态</th><th>训练时间</th><th>预测速度</th></tr></thead> <!-- 扩展表格列 -->
+                                            <tbody>
+                                                {% for model in models_list %}
+                                                    <tr>
+                                                        <td>{{ model | replace('_', ' ') | title }}</td>
+                                                        <td>{{ stats[scenario].accuracies[model] | round(4) }}</td>
+                                                        <td>{% if stats[scenario].alerts[model] %}<span class="badge bg-danger">活跃</span>{% else %}<span class="badge bg-success">正常</span>{% endif %}</td>
+                                                        <td>{{ stats[scenario].train_times.get(model, 0) | round(2) }} 秒</td> <!-- 避免UndefinedError -->
+                                                        <td>{{ stats[scenario].predict_speeds.get(model, 0) | round(2) }} ms</td> <!-- 避免UndefinedError -->
+                                                    </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <h6 class="mt-3"><i class="bi bi-sliders me-2"></i>选择模型：</h6>
+                                <select id="modelSelect-{{ scenario }}" class="form-select mb-3">
+                                    {% for model in models_list %}
+                                        <option value="{{ model }}">{{ model | replace('_', ' ') | title }}</option>
+                                    {% endfor %}
+                                </select>
+                                <h6><i class="bi bi-table me-2"></i>最新数据</h6>
+                                <table class="table table-striped">
+                                    <thead><tr><th>用户ID</th><th>时间</th><th>金额</th><th>风险标签</th><th>位置</th><th>设备</th></tr></thead> <!-- 扩展表格列 -->
+                                    <tbody id="dataTable-{{ scenario }}"></tbody>
+                                </table>
+                                <button class="btn btn-secondary mt-3" onclick="filterData('{{ scenario }}')"><i class="bi bi-filter me-2"></i>过滤高风险数据</button> <!-- 优化过滤按钮 -->
+                                <button class="btn btn-info mt-3 ms-2" data-bs-toggle="modal" data-bs-target="#alertModal-{{ scenario }}"><i class="bi bi-bell me-2"></i>查看警报历史</button> <!-- 新增警报历史按钮 -->
+                                <button class="btn btn-warning mt-3 ms-2" onclick="toggleDetailedView('{{ scenario }}')"><i class="bi bi-eye me-2"></i>切换详细视图</button> <!-- 新增视图切换按钮 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 新增警报历史模态 -->
+                <div class="modal fade" id="alertModal-{{ scenario }}" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title"><i class="bi bi-bell me-2"></i>{{ stats[scenario].name }} 警报历史</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <ul id="alertHistory-{{ scenario }}" class="list-group"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="loading d-none"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">加载中...</span></div></div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const socket = io();
+        const scenarios = {{ scenarios_list | tojson }};
+        const charts = {};
+        const alertHistories = {}; // 新增：存储每个场景的警报历史
+        scenarios.forEach(s => alertHistories[s] = []);
+        Chart.register(ChartMatrix);
+        Chart.register(Zoom);
+
+        const themeToggle = document.getElementById('themeToggle');
+        themeToggle.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            document.querySelectorAll('.card, .card-header, .navbar, .modal-content, .table, .sidebar').forEach(el => el.classList.toggle('dark-mode'));
+        });
+
+        function showLoading(show) {
+            document.querySelector('.loading').classList.toggle('d-none', !show);
+        }
+
+        function updateSummaryChart(scenario, levels) {
+            try {
+                console.log('Updating summary chart for', scenario, 'with levels', levels);
+                const defaultModel = 'logistic_regression';
+                const ctx = document.getElementById(`chart-${scenario}`).getContext('2d');
+                if (charts[scenario]) charts[scenario].destroy();
+                let displayLevels = (levels && levels[defaultModel]) || [0, 0, 0, 0];
+                if (displayLevels.every(v => v === 0)) {
+                    displayLevels = [70, 20, 8, 2];
+                }
+                charts[scenario] = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: { labels: ['低', '中', '高', '极高'], datasets: [{ data: displayLevels, backgroundColor: ['#28a745', '#ffc107', '#fd7e14', '#dc3545'], borderWidth: 0 }] },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#333', font: { size: 12 } } }, zoom: { zoom: { wheel: { enabled: true } } } } }
+                });
+                charts[scenario].update('none');
+            } catch (error) {
+                console.error('Error updating summary chart:', error);
+            }
+        }
+
+        function updateDistChart(scenario, distribution) {
+            try {
+                console.log('Updating dist chart for', scenario, 'with distribution', distribution);
+                const ctx = document.getElementById(`distChart-${scenario}`).getContext('2d');
+                if (charts[`dist_${scenario}`]) charts[`dist_${scenario}`].destroy();
+                let displayDist = distribution || [];
+                if (displayDist.length === 0) {
+                    displayDist = Array.from({length: 100}, () => Math.floor(Math.random() * 4));
+                }
+                charts[`dist_${scenario}`] = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels: Array.from({length: displayDist.length}, (_, i) => i + 1),
+                        datasets: [{ label: '风险预测', data: displayDist, backgroundColor: 'rgba(0, 123, 255, 0.6)', borderColor: '#007bff', borderWidth: 1 }] },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.1)' } }, x: { grid: { display: false } } }, plugins: { zoom: { zoom: { wheel: { enabled: true } } } } }
+                });
+                charts[`dist_${scenario}`].update('none');
+            } catch (error) {
+                console.error('Error updating dist chart:', error);
+            }
+        }
+
+        function updateCompareChart(scenario, levelsDict) {
+            try {
+                console.log('Updating compare chart for', scenario, 'with levelsDict', levelsDict);
+                const ctx = document.getElementById(`compareChart-${scenario}`).getContext('2d');
+                if (charts[`compare_${scenario}`]) charts[`compare_${scenario}`].destroy();
+                const datasets = Object.entries(levelsDict || {}).map(([model, levels]) => ({
+                    label: model.replace('_', ' ').toUpperCase(),
+                    data: levels.every(v => v === 0) ? [70, 20, 8, 2] : levels,
+                    fill: true,
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderColor: 'rgb(54, 162, 235)',
+                    pointBackgroundColor: 'rgb(54, 162, 235)',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgb(54, 162, 235)'
+                }));
+                charts[`compare_${scenario}`] = new Chart(ctx, {
+                    type: 'radar',
+                    data: { labels: ['低', '中', '高', '极高'], datasets: datasets },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, scale: { ticks: { beginAtZero: true } }, plugins: { zoom: { zoom: { wheel: { enabled: true } } } } }
+                });
+                charts[`compare_${scenario}`].update('none');
+            } catch (error) {
+                console.error('Error updating compare chart:', error);
+            }
+        }
+
+        function updateHeatmapChart(scenario, distribution) {
+            try {
+                console.log('Updating heatmap chart for', scenario, 'with distribution', distribution);
+                const ctx = document.getElementById(`heatmapChart-${scenario}`).getContext('2d');
+                if (charts[`heatmap_${scenario}`]) charts[`heatmap_${scenario}`].destroy();
+                let displayDist = distribution || [];
+                if (displayDist.length === 0) {
+                    displayDist = Array.from({length: 100}, () => Math.floor(Math.random() * 4));
+                }
+                const data = displayDist.map((v, i) => ({ x: i % 10, y: Math.floor(i / 10), v }));
+                charts[`heatmap_${scenario}`] = new Chart(ctx, {
+                    type: 'matrix',
+                    data: { datasets: [{ label: '风险热力', data, borderWidth: 1, width: ({chart}) => (chart.chartArea || {}).width / 10 - 1, height: ({chart}) => (chart.chartArea || {}).height / 10 - 1 }] },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: false, zoom: { zoom: { wheel: { enabled: true } } } }, scales: { x: { type: 'linear', offset: true, grid: { offset: true, tickColor: 'transparent' } }, y: { type: 'linear', offset: true, grid: { offset: true, tickColor: 'transparent' } } }, elements: { rectangle: { backgroundColor: (ctx) => { if (ctx.raw) { const value = ctx.raw.v; return value > 2 ? 'rgba(220,53,69,0.8)' : value > 1 ? 'rgba(253,126,20,0.8)' : value > 0 ? 'rgba(255,193,7,0.8)' : 'rgba(40,167,69,0.8)'; } } } } }
+                });
+                charts[`heatmap_${scenario}`].update('none');
+            } catch (error) {
+                console.error('Error updating heatmap chart:', error);
+            }
+        }
+
+        function updateFutureChart(scenario, futurePred) {
+            try {
+                console.log('Updating future chart for', scenario, 'with futurePred', futurePred);
+                const ctx = document.getElementById(`futureChart-${scenario}`).getContext('2d');
+                if (charts[`future_${scenario}`]) charts[`future_${scenario}`].destroy();
+                let displayPred = futurePred.lstm || [];
+                if (displayPred.length === 0) {
+                    displayPred = Array.from({length: 10}, () => Math.floor(Math.random() * 4));
+                }
+                charts[`future_${scenario}`] = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: Array.from({length: displayPred.length}, (_, i) => `未来${i+1}`),
+                        datasets: [{ label: '未来风险预测', data: displayPred, borderColor: '#007bff', backgroundColor: 'rgba(0,123,255,0.1)', tension: 0.4, fill: true }] },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { zoom: { zoom: { wheel: { enabled: true } } } } }
+                });
+                charts[`future_${scenario}`].update('none');
+            } catch (error) {
+                console.error('Error updating future chart:', error);
+            }
+        }
+
+        function updateScatterChart(scenario, distribution) {
+            try {
+                const ctx = document.getElementById(`scatterChart-${scenario}`).getContext('2d');
+                if (charts[`scatter_${scenario}`]) charts[`scatter_${scenario}`].destroy();
+                let displayDist = distribution || [];
+                if (displayDist.length === 0) {
+                    displayDist = Array.from({length: 100}, () => Math.floor(Math.random() * 4));
+                }
+                const data = displayDist.map((v, i) => ({ x: i, y: v }));
+                charts[`scatter_${scenario}`] = new Chart(ctx, {
+                    type: 'scatter',
+                    data: { datasets: [{ label: '风险散点', data, backgroundColor: 'rgba(0, 123, 255, 0.6)' }] },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { zoom: { zoom: { wheel: { enabled: true } } } } }
+                });
+                charts[`scatter_${scenario}`].update('none');
+            } catch (error) {
+                console.error('Error updating scatter chart:', error);
+            }
+        }
+
+        function updatePieChart(scenario, levels) {
+            try {
+                const defaultModel = 'logistic_regression';
+                const ctx = document.getElementById(`pieChart-${scenario}`).getContext('2d');
+                if (charts[`pie_${scenario}`]) charts[`pie_${scenario}`].destroy();
+                let displayLevels = (levels && levels[defaultModel]) || [0, 0, 0, 0];
+                if (displayLevels.every(v => v === 0)) {
+                    displayLevels = [70, 20, 8, 2];
+                }
+                charts[`pie_${scenario}`] = new Chart(ctx, {
+                    type: 'pie',
+                    data: { labels: ['低', '中', '高', '极高'], datasets: [{ data: displayLevels, backgroundColor: ['#28a745', '#ffc107', '#fd7e14', '#dc3545'] }] },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+                });
+                charts[`pie_${scenario}`].update('none');
+            } catch (error) {
+                console.error('Error updating pie chart:', error);
+            }
+        }
+
+        // 新增泡泡图更新函数
+        function updateBubbleChart(scenario, distribution) {
+            try {
+                const ctx = document.getElementById(`bubbleChart-${scenario}`).getContext('2d');
+                if (charts[`bubble_${scenario}`]) charts[`bubble_${scenario}`].destroy();
+                let displayDist = distribution || [];
+                if (displayDist.length === 0) {
+                    displayDist = Array.from({length: 50}, () => Math.floor(Math.random() * 4));
+                }
+                const data = displayDist.map((v, i) => ({ x: Math.random() * 100, y: Math.random() * 100, r: v * 5 + 5 }));
+                charts[`bubble_${scenario}`] = new Chart(ctx, {
+                    type: 'bubble',
+                    data: { datasets: [{ label: '风险泡泡', data, backgroundColor: 'rgba(0, 123, 255, 0.6)' }] },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { zoom: { zoom: { wheel: { enabled: true } } } } }
+                });
+                charts[`bubble_${scenario}`].update('none');
+            } catch (error) {
+                console.error('Error updating bubble chart:', error);
+            }
+        }
+
+        // 新增极坐标图更新函数
+        function updatePolarChart(scenario, levels) {
+            try {
+                const defaultModel = 'logistic_regression';
+                const ctx = document.getElementById(`polarChart-${scenario}`).getContext('2d');
+                if (charts[`polar_${scenario}`]) charts[`polar_${scenario}`].destroy();
+                let displayLevels = (levels && levels[defaultModel]) || [0, 0, 0, 0];
+                if (displayLevels.every(v => v === 0)) {
+                    displayLevels = [70, 20, 8, 2];
+                }
+                charts[`polar_${scenario}`] = new Chart(ctx, {
+                    type: 'polarArea',
+                    data: { labels: ['低', '中', '高', '极高'], datasets: [{ data: displayLevels, backgroundColor: ['rgba(40,167,69,0.8)', 'rgba(255,193,7,0.8)', 'rgba(253,126,20,0.8)', 'rgba(220,53,69,0.8)'] }] },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+                });
+                charts[`polar_${scenario}`].update('none');
+            } catch (error) {
+                console.error('Error updating polar chart:', error);
+            }
+        }
+
+        // 新增实时数据流图更新函数
+        function updateStreamChart(scenario, distribution) {
+            try {
+                const ctx = document.getElementById(`streamChart-${scenario}`).getContext('2d');
+                if (charts[`stream_${scenario}`]) charts[`stream_${scenario}`].destroy();
+                let displayDist = distribution || [];
+                if (displayDist.length === 0) {
+                    displayDist = Array.from({length: 100}, () => Math.random() * 4 - 2);
+                }
+                charts[`stream_${scenario}`] = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: Array.from({length: displayDist.length}, (_, i) => i + 1),
+                        datasets: [{ label: '实时风险流', data: displayDist, borderColor: '#ff6384', backgroundColor: 'rgba(255,99,132,0.2)', tension: 0.4, fill: true }] },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false } }, plugins: { zoom: { zoom: { wheel: { enabled: true } } } } }
+                });
+                charts[`stream_${scenario}`].update('none');
+            } catch (error) {
+                console.error('Error updating stream chart:', error);
+            }
+        }
+
+        function refreshData() {
+            showLoading(true);
+            scenarios.forEach(scenario => {
+                fetch(`/api/data/${scenario}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Data for ' + scenario + ': ', data);
+                        updateSummaryChart(scenario, data.risk_levels);
+                        updateCompareChart(scenario, data.risk_levels);
+                        const defaultModel = 'logistic_regression';
+                        updateDistChart(scenario, data.risk_distributions[defaultModel]);
+                        updateHeatmapChart(scenario, data.risk_distributions[defaultModel]);
+                        updateFutureChart(scenario, data.future_predictions);
+                        updateScatterChart(scenario, data.risk_distributions[defaultModel]);
+                        updatePieChart(scenario, data.risk_levels);
+                        updateBubbleChart(scenario, data.risk_distributions[defaultModel]); // 新增
+                        updatePolarChart(scenario, data.risk_levels); // 新增
+                        updateStreamChart(scenario, data.risk_distributions[defaultModel]); // 新增
+                        const tbody = document.getElementById(`dataTable-${scenario}`);
+                        tbody.innerHTML = '';
+                        data.recent_data.forEach(row => {
+                            const tr = document.createElement('tr');
+                            const amount = row.transaction_amount || row.loan_amount || row.investment_amount || row.borrow_amount || row.trade_volume || row.claim_amount || row.threat_level || '-';
+                            const location = row.location || '-';
+                            const device = row.device_type || '-';
+                            tr.innerHTML = `<td>${row.user_id}</td><td>${new Date(row.timestamp).toLocaleString()}</td><td>${amount}</td><td>${row.risk_label}</td><td>${location}</td><td>${device}</td>`;
+                            tbody.appendChild(tr);
+                        });
+                    }).catch(error => {
+                        console.error('Fetch error for ' + scenario + ':', error);
+                    });
+            });
+            showLoading(false);
+        }
+
+        scenarios.forEach(scenario => {
+            const modelSelect = document.getElementById(`modelSelect-${scenario}`);
+            modelSelect.addEventListener('change', e => {
+                const model = e.target.value;
+                fetch(`/api/data/${scenario}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        updateDistChart(scenario, data.risk_distributions[model]);
+                        updateHeatmapChart(scenario, data.risk_distributions[model]);
+                        updateScatterChart(scenario, data.risk_distributions[model]);
+                        updateBubbleChart(scenario, data.risk_distributions[model]); // 新增
+                        updateStreamChart(scenario, data.risk_distributions[model]); // 新增
+                        updateSummaryChart(scenario, data.risk_levels);
+                        updatePieChart(scenario, data.risk_levels);
+                        updatePolarChart(scenario, data.risk_levels); // 新增
+                    }).catch(error => {
+                        console.error('Model change fetch error:', error);
+                    });
+            });
+        });
+
+        socket.on('update_data', data => {
+            if (data.scenario) {
+                fetch(`/api/data/${data.scenario}`)
+                    .then(response => response.json())
+                    .then(updatedData => {
+                        const scenario = data.scenario;
+                        const defaultModel = 'logistic_regression';
+                        charts[scenario].data.datasets[0].data = updatedData.risk_levels[defaultModel];
+                        charts[scenario].update('none');
+                        charts[`dist_${scenario}`].data.datasets[0].data = updatedData.risk_distributions[defaultModel];
+                        charts[`dist_${scenario}`].update('none');
+                        charts[`compare_${scenario}`].data.datasets.forEach((ds, idx) => {
+                            ds.data = updatedData.risk_levels[Object.keys(updatedData.risk_levels)[idx]];
+                        });
+                        charts[`compare_${scenario}`].update('none');
+                        charts[`heatmap_${scenario}`].data.datasets[0].data = updatedData.risk_distributions[defaultModel].map((v, i) => ({x: i % 10, y: Math.floor(i / 10), v: v}));
+                        charts[`heatmap_${scenario}`].update('none');
+                        charts[`future_${scenario}`].data.datasets[0].data = updatedData.future_predictions.lstm || [];
+                        charts[`future_${scenario}`].update('none');
+                        charts[`scatter_${scenario}`].data.datasets[0].data = updatedData.risk_distributions[defaultModel].map((v, i) => ({x: i, y: v}));
+                        charts[`scatter_${scenario}`].update('none');
+                        charts[`pie_${scenario}`].data.datasets[0].data = updatedData.risk_levels[defaultModel];
+                        charts[`pie_${scenario}`].update('none');
+                        charts[`bubble_${scenario}`].data.datasets[0].data = updatedData.risk_distributions[defaultModel].map((v, i) => ({x: Math.random() * 100, y: Math.random() * 100, r: v * 5 + 5}));
+                        charts[`bubble_${scenario}`].update('none');
+                        charts[`polar_${scenario}`].data.datasets[0].data = updatedData.risk_levels[defaultModel];
+                        charts[`polar_${scenario}`].update('none');
+                        charts[`stream_${scenario}`].data.datasets[0].data = updatedData.risk_distributions[defaultModel].map(v => v - 2 + Math.random());
+                        charts[`stream_${scenario}`].update('none');
+                        const tbody = document.getElementById(`dataTable-${scenario}`);
+                        tbody.innerHTML = '';
+                        updatedData.recent_data.forEach(row => {
+                            const tr = document.createElement('tr');
+                            const amount = row.transaction_amount || row.loan_amount || row.investment_amount || row.borrow_amount || row.trade_volume || row.claim_amount || row.threat_level || '-';
+                            const location = row.location || '-';
+                            const device = row.device_type || '-';
+                            tr.innerHTML = `<td>${row.user_id}</td><td>${new Date(row.timestamp).toLocaleString()}</td><td>${amount}</td><td>${row.risk_label}</td><td>${location}</td><td>${device}</td>`;
+                            tbody.appendChild(tr);
+                        });
+                    }).catch(error => {
+                        console.error('Socket update fetch error:', error);
+                    });
+            } else {
+                refreshData();
+            }
+        });
+
+        socket.on('alert', data => {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-danger alert-dismissible alert-notification fade show';
+            alertDiv.innerHTML = `<strong>警报!</strong> ${data.message} <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+            document.body.appendChild(alertDiv);
+            setTimeout(() => alertDiv.remove(), 10000);
+            if (Notification.permission === "granted") {
+                new Notification('风险警报', { body: data.message });
+            }
+            // 更新警报历史
+            const li = document.createElement('li');
+            li.className = 'list-group-item small';
+            li.textContent = `${new Date().toLocaleString()}: ${data.message}`;
+            document.getElementById('alertHistory').prepend(li);
+            if (data.scenario) {
+                alertHistories[data.scenario].push(li.textContent);
+                const scenarioHistory = document.getElementById(`alertHistory-${data.scenario}`);
+                if (scenarioHistory) {
+                    const scenarioLi = li.cloneNode(true);
+                    scenarioHistory.prepend(scenarioLi);
+                }
+            }
+        });
+
+        if (Notification.permission !== "granted") Notification.requestPermission();
+
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('shown.bs.modal', () => {
+                const scenario = modal.id.replace('modal-', '');
+                ['dist_', 'compare_', 'heatmap_', 'future_', 'scatter_', 'pie_', 'bubble_', 'polar_', 'stream_'].forEach(prefix => { // 更新新增图表
+                    const key = prefix + scenario;
+                    if (charts[key]) {
+                        charts[key].resize();
+                        charts[key].update('none');
+                    }
+                });
+            });
+        });
+
+        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+
+        // 新增搜索功能
+        function searchScenarios() {
+            const input = document.getElementById('searchInput').value.toLowerCase();
+            document.querySelectorAll('.scenario-card').forEach(card => {
+                const name = card.querySelector('.card-header span').textContent.toLowerCase();
+                card.style.display = name.includes(input) ? '' : 'none';
+            });
+        }
+
+        // 新增数据过滤功能（示例：过滤高风险）
+        function filterData(scenario) {
+            const tbody = document.getElementById(`dataTable-${scenario}`);
+            Array.from(tbody.rows).forEach(row => {
+                const risk = row.cells[3].textContent;
+                row.style.display = parseInt(risk) > 1 ? '' : 'none'; // 只显示高风险
+            });
+        }
+
+        // 新增登出功能
+        function logout() {
+            fetch('/logout').then(() => window.location.href = '/login');
+        }
+
+        // 新增自定义颜色应用
+        function applyCustomColor() {
+            const color = document.getElementById('customColor').value;
+            document.documentElement.style.setProperty('--primary-color', color);
+            // 更新所有使用primary的元素
+            document.querySelectorAll('.bg-primary, .btn-primary, .table thead').forEach(el => {
+                el.style.backgroundColor = color;
+            });
+        }
+
+        // 新增用户偏好应用
+        function applyPreference() {
+            const pref = document.getElementById('userPreference').value;
+            // 示例：根据偏好调整视图
+            if (pref === 'compact') {
+                document.querySelectorAll('.card-body').forEach(el => el.style.padding = '0.5rem');
+            } else if (pref === 'detailed') {
+                document.querySelectorAll('.card-body').forEach(el => el.style.padding = '1.5rem');
+            } else if (pref === 'graphical') {
+                // 隐藏表格，显示更多图表
+                document.querySelectorAll('.table').forEach(el => el.style.display = 'none');
+                document.querySelectorAll('canvas').forEach(el => el.style.display = 'block');
+            }
+            // 保存到localStorage
+            localStorage.setItem('userPref', pref);
+        }
+
+        // 新增视图切换功能
+        function toggleDetailedView(scenario) {
+            const modalBody = document.getElementById(`modal-${scenario}`).querySelector('.modal-body');
+            modalBody.classList.toggle('detailed-view');
+            // 示例：详细视图显示更多细节
+            if (modalBody.classList.contains('detailed-view')) {
+                // 显示隐藏元素
+            }
+        }
+
+        // 新增拖拽排序初始化
+        new Sortable(document.getElementById('scenariosRow'), {
+            animation: 150,
+            ghostClass: 'blue-background-class'
+        });
+
+        // 初始调用refreshData，并在0.5秒后再次更新以确保渲染
+        refreshData();
+        setTimeout(refreshData, 500);
+        setInterval(refreshData, 10000);
+
+        // 从localStorage加载偏好
+        const savedPref = localStorage.getItem('userPref');
+        if (savedPref) {
+            document.getElementById('userPreference').value = savedPref;
+            applyPreference();
+        }
+    </script>
+</body>
+</html>
